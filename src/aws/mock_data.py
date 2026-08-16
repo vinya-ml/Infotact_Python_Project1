@@ -8,6 +8,7 @@ MOCK_AWS_STATE = {
             "state": "running"
         }
     ],
+
     "subnets": [
         {
             "id": "subnet-001",
@@ -15,11 +16,18 @@ MOCK_AWS_STATE = {
             "vpc_id": "vpc-001"
         }
     ],
+
     "security_groups": [
         {
             "id": "sg-001",
             "name": "aerodrift-sg",
-            "vpc_id": "vpc-001"
+            "vpc_id": "vpc-001",
+            "ingress_rules": [
+                {
+                    "port": 22,
+                    "cidr": "0.0.0.0/0"
+                }
+            ]
         }
     ]
 }
