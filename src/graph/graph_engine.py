@@ -109,7 +109,7 @@ def diagnose_drift(graph: nx.DiGraph) -> list[dict]:
 
 
 if __name__ == "__main__":
-    from aws.mock_data import MOCK_AWS_STATE  # Member 1's real data
+    from src.aws.mock_data import MOCK_AWS_STATE  # Member 1's real data
 
     graph = build_graph(MOCK_AWS_STATE)
 
@@ -125,4 +125,4 @@ if __name__ == "__main__":
             print(f"  - {f['drift_type']} via {f['resource_id']}: {f['bad_rule']}")
             print(f"    path: {' -> '.join(f['path'])}")
     else:
-        print("No drift detected. (Expected until ingress_rules data is added by Member 1.)")
+        print("No drift detected.")
