@@ -14,7 +14,6 @@ from reportlab.platypus import (
     HRFlowable,
 )
 
-
 class ReportGenerator:
     """Generates PDF incident reports from scan results."""
 
