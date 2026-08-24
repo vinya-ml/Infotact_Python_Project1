@@ -5,7 +5,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.ingestion.aws_ingestion import CloudStateLoader
 from app.topology.graph import CloudTopology

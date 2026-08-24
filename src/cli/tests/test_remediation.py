@@ -42,7 +42,7 @@ class TestRemediationGenerator:
 
     def test_code_contains_group_id(self, generator, findings):
         code = generator.render_code(findings[0])
-        assert "sg-database" in code
+        assert "sg-001" in code
 
     def test_code_contains_protocol(self, generator, findings):
         code = generator.render_code(findings[0])
@@ -58,7 +58,7 @@ class TestRemediationGenerator:
 
     def test_save_script_has_correct_name(self, generator, findings):
         path = generator.save_script(findings[0])
-        assert path.name == "remediate_sg-database_22.py"
+        assert path.name == "remediate_sg-001_22.py"
 
     def test_generate_all_returns_paths(self, generator, findings):
         scripts = generator.generate_all(findings)

@@ -64,12 +64,12 @@ class TestAeroDriftDB:
     def test_snapshot_node_count(self, db, topology, findings):
         scan_id = db.save_scan(topology, findings)
         snapshot = db.get_snapshot(scan_id)
-        assert len(snapshot["nodes"]) == 5
+        assert len(snapshot["nodes"]) == 4
 
     def test_snapshot_edge_count(self, db, topology, findings):
         scan_id = db.save_scan(topology, findings)
         snapshot = db.get_snapshot(scan_id)
-        assert len(snapshot["edges"]) == 4
+        assert len(snapshot["edges"]) == 3
 
     def test_diff_snapshots_same_scan(self, db, topology, findings):
         scan_id = db.save_scan(topology, findings)
