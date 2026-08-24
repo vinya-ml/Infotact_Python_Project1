@@ -1,8 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from src.cli.generator import RemediationGenerator
-
+from src.automation.generator import RemediationGenerator
 
 def make_finding():
     return SimpleNamespace(
