@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.cli.sandbox import RemediationSandbox
+from src.automation.sandbox import RemediationSandbox
 
 
 def test_execute_script_success(tmp_path):
