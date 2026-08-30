@@ -125,4 +125,4 @@ if __name__ == "__main__":
             print(f"  - {f['drift_type']} via {f['resource_id']}: {f['bad_rule']}")
             print(f"    path: {' -> '.join(f['path'])}")
     else:
-        print("No drift detected.")
+        print("No drift detected. (Expected until ingress_rules data is added by Member 1.)")
