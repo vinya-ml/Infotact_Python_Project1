@@ -24,6 +24,7 @@ MOCK_AWS_STATE = {
             "vpc_id": "vpc-001",
             "ingress_rules": [
                 {
+                    "protocol": "tcp",
                     "port": 22,
                     "cidr": "0.0.0.0/0"
                 }
