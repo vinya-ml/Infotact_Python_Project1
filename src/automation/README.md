@@ -27,8 +27,10 @@ diagnose_drift() output (dict)
 ## Files
 
 - `adapter.py` — converts `diagnose_drift()`'s dict output into the
-  `DriftFinding`-shaped object the generator expects. **New code**,
-  specific to connecting this module to the Graph module.
+  `DriftFinding`-shaped object the generator expects. Includes input
+  validation (`InvalidFindingError`) that raises a clear, specific error
+  if a finding is missing required fields, rather than failing with a
+  confusing generic error later on.
 - `generator.py` — builds an AST representing the exact `boto3` fix call,
   then converts it to real, runnable Python code.
 - `sandbox.py` — executes generated fix scripts safely. In `dry_run=True`
@@ -37,6 +39,21 @@ diagnose_drift() output (dict)
 - `automation_engine.py` — the single public entry point. Everything else
   (like the CLI) should call `remediate()` from here, not the individual
   pieces directly.
+- `test_adapter.py` / `test_automation_engine.py` — basic functional tests.
+- `test_generated_code_structure.py` — parses the generated fix code with
+  Python's own `ast` module and verifies its actual structure (correct
+  function call, correct arguments) — not just that it runs without error.
+- `test_multiple_findings.py` — confirms `generate_all()` correctly
+  handles several findings at once, with no data mixing between the
+  resulting scripts.
+
+## Current scope (Week 3)
+
+Right now, this module supports exactly one type of drift:
+**`open_ingress`** — a security group with a rule allowing traffic from
+`0.0.0.0/0` (the open internet). Extending this to a second drift type
+depends on the Graph module's detection logic being expanded first;
+as of this writing, no second drift type has been finalized by the team.
 
 ## How to use it
 
