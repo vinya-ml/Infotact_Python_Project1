@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.vscode/
+*.db
+*.pdf
+reports/*.pdf
+generated_remediation/*.py
+.pytest_cache/
+*.egg-info/
+dist/
+build/
