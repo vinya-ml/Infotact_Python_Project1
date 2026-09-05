@@ -7,6 +7,13 @@ Tracks already-remediated findings across cycles (via a shared set
 passed into run_cycle), so the daemon only acts on genuinely NEW drift,
 not the same unchanged issue over and over.
 
+SAFETY: live (non-dry-run) mode is deliberately hard to enable by
+accident. Passing dry_run=False alone is NOT enough - you must also set
+the environment variable AERODRIFT_CONFIRM_LIVE=YES. This is intentional:
+an unattended daemon that can make REAL AWS changes on its own is
+dangerous, and should never turn on from a default, a typo, or a copied
+command someone didn't fully read.
+
 Public function:
     run_daemon(interval_seconds=10, dry_run=True, max_cycles=None)
 
@@ -17,10 +24,44 @@ don't hang forever).
 
 import asyncio
 import logging
+import os
 
 from src.automation.agent import run_cycle
 
 logger = logging.getLogger("aerodrift.daemon")
+
+LIVE_MODE_CONFIRM_ENV_VAR = "AERODRIFT_CONFIRM_LIVE"
+LIVE_MODE_CONFIRM_VALUE = "YES"
+
+
+class LiveModeNotConfirmedError(RuntimeError):
+    """
+    Raised when someone tries to start the daemon in live (non-dry-run)
+    mode without explicitly confirming it via environment variable.
+
+    This exists so live mode can NEVER turn on silently - not from a
+    default value, not from a copy-pasted command, not from a typo.
+    """
+    pass
+
+
+def _check_live_mode_allowed(dry_run: bool) -> None:
+    if dry_run:
+        return  # dry-run is always safe, no confirmation needed
+
+    confirmed = os.environ.get(LIVE_MODE_CONFIRM_ENV_VAR) == LIVE_MODE_CONFIRM_VALUE
+    if not confirmed:
+        raise LiveModeNotConfirmedError(
+            "Refusing to start in LIVE mode (dry_run=False) without explicit "
+            f"confirmation. This would make REAL changes to AWS.\n"
+            f"To confirm you understand this and want live mode, set the "
+            f"environment variable {LIVE_MODE_CONFIRM_ENV_VAR}={LIVE_MODE_CONFIRM_VALUE} "
+            f"and try again."
+        )
+
+    logger.warning(
+        "!!! LIVE MODE CONFIRMED - this daemon WILL make real AWS changes !!!"
+    )
 
 
 async def run_daemon(interval_seconds: int = 10, dry_run: bool = True, max_cycles: int | None = None):
@@ -29,24 +70,19 @@ async def run_daemon(interval_seconds: int = 10, dry_run: bool = True, max_cycle
     Remembers what's already been remediated across the whole run, so
     the same issue doesn't get "fixed" again every cycle.
 
-    Args:
-        interval_seconds: how long to wait between each detection cycle
-        dry_run: passed straight through to run_cycle()/remediate()
-        max_cycles: if set, stops after this many cycles (for testing).
-                    If None, runs forever until manually stopped (Ctrl+C).
-
-    Returns:
-        A list of all CycleResult objects from every cycle run - mainly
-        useful for tests.
+    Raises LiveModeNotConfirmedError if dry_run=False without the safety
+    environment variable set - see module docstring for why.
     """
+    _check_live_mode_allowed(dry_run)
+
+    mode_label = "DRY-RUN (safe)" if dry_run else "LIVE (real changes will be made)"
     logger.info(
-        f"Starting AeroDrift daemon: checking every {interval_seconds}s "
-        f"(dry_run={dry_run})"
+        f"Starting AeroDrift daemon: checking every {interval_seconds}s [{mode_label}]"
     )
 
     results = []
     cycle_count = 0
-    seen_findings = set()  # shared across every cycle in this run
+    seen_findings = set()
 
     try:
         while max_cycles is None or cycle_count < max_cycles:
@@ -72,10 +108,11 @@ def start(interval_seconds: int = 10, dry_run: bool = True):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    print("Starting AeroDrift daemon (Ctrl+C to stop)...")
-    print("Running 3 cycles, 3 seconds apart. Watch cycle 2 and 3 skip the")
-    print("already-handled issue instead of re-remediating it.\n")
+    print("Demo 1: Trying to start in LIVE mode WITHOUT confirmation (should be blocked)\n")
+    try:
+        asyncio.run(run_daemon(interval_seconds=1, dry_run=False, max_cycles=1))
+    except LiveModeNotConfirmedError as e:
+        print(f"Correctly blocked: {e}\n")
 
-    asyncio.run(run_daemon(interval_seconds=3, dry_run=True, max_cycles=3))
-
-    print("\nDemo complete - daemon ran 3 cycles, remediated the issue ONCE.")
+    print("Demo 2: Running in normal DRY-RUN mode (always allowed)\n")
+    asyncio.run(run_daemon(interval_seconds=1, dry_run=True, max_cycles=1))
