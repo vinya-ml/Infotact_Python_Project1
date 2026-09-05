@@ -3,6 +3,10 @@ loop.py - Wraps agent.run_cycle() in a continuously-running loop, using
 asyncio - matching the project brief's description of AeroDrift as a
 daemon that continuously watches for and heals configuration drift.
 
+Tracks already-remediated findings across cycles (via a shared set
+passed into run_cycle), so the daemon only acts on genuinely NEW drift,
+not the same unchanged issue over and over.
+
 Public function:
     run_daemon(interval_seconds=10, dry_run=True, max_cycles=None)
 
@@ -22,6 +26,8 @@ logger = logging.getLogger("aerodrift.daemon")
 async def run_daemon(interval_seconds: int = 10, dry_run: bool = True, max_cycles: int | None = None):
     """
     Runs run_cycle() repeatedly, waiting `interval_seconds` between runs.
+    Remembers what's already been remediated across the whole run, so
+    the same issue doesn't get "fixed" again every cycle.
 
     Args:
         interval_seconds: how long to wait between each detection cycle
@@ -31,8 +37,7 @@ async def run_daemon(interval_seconds: int = 10, dry_run: bool = True, max_cycle
 
     Returns:
         A list of all CycleResult objects from every cycle run - mainly
-        useful for tests. In a real long-running daemon this list would
-        grow unboundedly, so max_cycles should always be set outside tests.
+        useful for tests.
     """
     logger.info(
         f"Starting AeroDrift daemon: checking every {interval_seconds}s "
@@ -41,10 +46,11 @@ async def run_daemon(interval_seconds: int = 10, dry_run: bool = True, max_cycle
 
     results = []
     cycle_count = 0
+    seen_findings = set()  # shared across every cycle in this run
 
     try:
         while max_cycles is None or cycle_count < max_cycles:
-            result = run_cycle(dry_run=dry_run)
+            result = run_cycle(dry_run=dry_run, seen_findings=seen_findings)
             results.append(result)
             cycle_count += 1
 
@@ -67,10 +73,9 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     print("Starting AeroDrift daemon (Ctrl+C to stop)...")
-    print("Running 3 cycles for this demo, 3 seconds apart.\n")
+    print("Running 3 cycles, 3 seconds apart. Watch cycle 2 and 3 skip the")
+    print("already-handled issue instead of re-remediating it.\n")
 
-    # For a real daemon, you'd call start() with max_cycles=None (runs forever).
-    # Here we cap it at 3 cycles so the demo actually finishes.
     asyncio.run(run_daemon(interval_seconds=3, dry_run=True, max_cycles=3))
 
-    print("\nDemo complete - daemon ran 3 cycles and stopped.")
+    print("\nDemo complete - daemon ran 3 cycles, remediated the issue ONCE.")
