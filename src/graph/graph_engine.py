@@ -3,16 +3,10 @@ graph_engine.py - Member 2's module (NetworkX / Topology Engine)
 
 Updated to read Member 1's actual MOCK_AWS_STATE shape:
     {
-        "ec2_instances": [{"id", "name", "subnet_id", "security_group_ids", "state"}],
+        "ec2_instances": [{"id", "name", "subnet_id", "security_group_ids", "state", "role"}],
         "subnets": [{"id", "name", "vpc_id"}],
         "security_groups": [{"id", "name", "vpc_id", "ingress_rules": [{"port", "cidr"}]}],
     }
-
-NOTE: "ingress_rules" doesn't exist in Member 1's data yet as of writing this.
-Until it's added, build_graph() still works (nodes + subnet/instance edges),
-but diagnose_drift() has nothing to flag, since there's no rule data yet.
-The code below is written to pick it up automatically the moment it's added
-- no changes needed here when that happens.
 
 Public API:
     build_graph(aws_state)   -> nx.DiGraph
@@ -43,7 +37,6 @@ def build_graph(aws_state: dict) -> nx.DiGraph:
     for sg in aws_state.get("security_groups", []):
         graph.add_node(sg["id"], type="security_group", **sg)
 
-        # Only creates this edge once ingress_rules actually exists in the data.
         for rule in sg.get("ingress_rules", []):
             if rule.get("cidr") == INTERNET_CIDR:
                 graph.add_edge("internet", sg["id"], port=rule.get("port"))
@@ -63,7 +56,12 @@ def build_graph(aws_state: dict) -> nx.DiGraph:
 
 def diagnose_drift(graph: nx.DiGraph) -> list[dict]:
     """
-    Find any instance reachable from the internet.
+    Find any DATABASE instance reachable from the internet.
+
+    Per the project brief: "detect if a path suddenly exists between a
+    0.0.0.0/0 (Internet) node and a PRIVATE DATABASE node" - so this only
+    flags instances with role == "database", not every exposed instance
+    (a public web server being open is often intentional).
 
     Returns a list of dicts, e.g.:
         {
@@ -72,9 +70,6 @@ def diagnose_drift(graph: nx.DiGraph) -> list[dict]:
             "bad_rule": {"port": int, "cidr": str},
             "path": [node ids from internet to the exposed instance],
         }
-
-    Will correctly return an EMPTY list if there's no ingress_rules data
-    yet - that's expected, not a bug, until Member 1 adds that field.
     """
     if graph is None:
         raise ValueError("diagnose_drift() called with no graph - build_graph() first.")
@@ -87,12 +82,14 @@ def diagnose_drift(graph: nx.DiGraph) -> list[dict]:
         if data.get("type") != "instance":
             continue
 
+        if data.get("role") != "database":
+            continue
+
         if nx.has_path(graph, "internet", node):
             path = nx.shortest_path(graph, "internet", node)
             sg_id = path[1] if len(path) > 1 else None
             sg_data = graph.nodes[sg_id] if sg_id else {}
 
-            # Find the specific rule that caused this exposure
             bad_rule = next(
                 (r for r in sg_data.get("ingress_rules", []) if r.get("cidr") == INTERNET_CIDR),
                 {}
@@ -109,7 +106,7 @@ def diagnose_drift(graph: nx.DiGraph) -> list[dict]:
 
 
 if __name__ == "__main__":
-    from src.aws.mock_data import MOCK_AWS_STATE  # Member 1's real data
+    from src.aws.mock_data import MOCK_AWS_STATE
 
     graph = build_graph(MOCK_AWS_STATE)
 
