@@ -5,7 +5,8 @@ MOCK_AWS_STATE = {
             "name": "aerodrift-server",
             "subnet_id": "subnet-001",
             "security_group_ids": ["sg-001"],
-            "state": "running"
+            "state": "running",
+            "role": "database"
         }
     ],
 

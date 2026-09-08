@@ -1,3 +1,9 @@
+"""
+main.py - CLI entry point, using the team's REAL modules
+(src/aws, src/graph, src/automation) instead of the old standalone
+AeroDrift/app/ (or its duplicate, src/app/) structure.
+"""
+
 import sys
 from pathlib import Path
 
@@ -5,15 +11,17 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.ingestion.aws_ingestion import CloudStateLoader
-from app.topology.graph import CloudTopology
-from app.detection.drift_detector import DriftDetector
-from app.remediation.generator import RemediationGenerator
-from app.remediation.sandbox import RemediationSandbox
-from app.persistence.database import AeroDriftDB
-from app.cli.dashboard import (
+from src.aws.mock_data import MOCK_AWS_STATE
+from src.graph.graph_engine import build_graph, diagnose_drift
+from src.automation.topology_adapter import to_dashboard_topology
+from src.automation.adapter import convert_all
+from src.automation.generator import RemediationGenerator
+from src.automation.sandbox import RemediationSandbox
+from src.cli.database import AeroDriftDB
+
+from src.cli.dashboard import (
     console,
     show_banner,
     show_cloud_summary,
@@ -25,12 +33,16 @@ from app.cli.dashboard import (
     show_persistence_summary,
     show_scan_complete,
 )
-from app.cli.report import ReportGenerator
+from src.cli.report import ReportGenerator
 
 
-DEFAULT_STATE = (
-    Path(__file__).resolve().parent / "data" / "mock_aws_state.json"
-)
+def load_and_analyze():
+    """Shared logic: build the graph and detect drift from real AWS data."""
+    raw_graph = build_graph(MOCK_AWS_STATE)
+    topology = to_dashboard_topology(raw_graph)
+    raw_findings = diagnose_drift(raw_graph)
+    findings = convert_all(raw_findings)
+    return topology, findings
 
 
 @click.group()
@@ -41,141 +53,54 @@ def cli():
 
 
 @cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-def scan(state_file):
+def scan():
     """Ingest state, build topology, and detect drift."""
-
     show_banner()
-
-    with console.status(
-        "[bold cyan]Loading cloud state...[/bold cyan]"
-    ):
-        loader = CloudStateLoader(state_file)
-        state = loader.load()
-
-    console.print(
-        "[green]Cloud state loaded successfully.[/green]"
-    )
-
-    with console.status(
-        "[bold cyan]Building topology graph...[/bold cyan]"
-    ):
-        topology = CloudTopology()
-        topology.build_from_state(state)
-
+    with console.status("[bold cyan]Loading cloud state...[/bold cyan]"):
+        topology, findings = load_and_analyze()
+    console.print("[green]Cloud state loaded successfully.[/green]")
     show_cloud_summary(topology)
     show_topology_tree(topology)
-
-    with console.status(
-        "[bold cyan]Running drift detection...[/bold cyan]"
-    ):
-        detector = DriftDetector(topology)
-        findings = detector.detect_public_database_exposure()
-
     show_drift_findings(findings)
     show_scan_complete()
 
 
 @cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-def dashboard(state_file):
+def dashboard():
     """Display the full cloud dashboard with topology tree."""
-
     show_banner()
-
-    loader = CloudStateLoader(state_file)
-    state = loader.load()
-
-    topology = CloudTopology()
-    topology.build_from_state(state)
-
+    topology, findings = load_and_analyze()
     show_cloud_summary(topology)
-
     console.print()
     show_topology_tree(topology)
-
     console.print()
     show_topology(topology)
 
 
 @cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-def detect(state_file):
+def detect():
     """Run drift detection and display findings."""
-
     show_banner()
-
-    loader = CloudStateLoader(state_file)
-    state = loader.load()
-
-    topology = CloudTopology()
-    topology.build_from_state(state)
-
-    detector = DriftDetector(topology)
-    findings = detector.detect_public_database_exposure()
-
+    _, findings = load_and_analyze()
     show_drift_findings(findings)
 
 
 @cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-@click.option(
-    "--execute/--dry-run",
-    default=True,
-    help="Execute remediation or just generate scripts.",
-)
-@click.option(
-    "--save/--no-save",
-    default=True,
-    help="Save results to the database.",
-)
-def remediate(state_file, execute, save):
+@click.option("--execute/--dry-run", default=True, help="Execute remediation or just generate scripts.")
+@click.option("--save/--no-save", default=True, help="Save results to the database.")
+def remediate(execute, save):
     """Detect drift, generate and execute remediation scripts."""
-
     show_banner()
-
-    with console.status("[bold cyan]Loading state...[/bold cyan]"):
-        loader = CloudStateLoader(state_file)
-        state = loader.load()
-
-    topology = CloudTopology()
-    topology.build_from_state(state)
-
     with console.status("[bold cyan]Detecting drift...[/bold cyan]"):
-        detector = DriftDetector(topology)
-        findings = detector.detect_public_database_exposure()
+        topology, findings = load_and_analyze()
 
     show_drift_findings(findings)
 
     if not findings:
-        console.print(
-            "[green]Nothing to remediate.[/green]"
-        )
+        console.print("[green]Nothing to remediate.[/green]")
         return
 
-    with console.status(
-        "[bold yellow]Generating remediation scripts...[/bold yellow]"
-    ):
+    with console.status("[bold yellow]Generating remediation scripts...[/bold yellow]"):
         generator = RemediationGenerator()
         scripts = generator.generate_all(findings)
 
@@ -183,9 +108,7 @@ def remediate(state_file, execute, save):
 
     sandbox = RemediationSandbox(dry_run=not execute)
     mode = "live" if execute else "dry-run"
-    console.print(
-        f"\n[bold]Executing scripts ({mode})...[/bold]\n"
-    )
+    console.print(f"\n[bold]Executing scripts ({mode})...[/bold]\n")
 
     results = sandbox.execute_all(scripts)
     show_remediation_results(results)
@@ -193,16 +116,14 @@ def remediate(state_file, execute, save):
     if save:
         db = AeroDriftDB()
         db.connect()
-        scan_id = db.save_scan(topology, findings, state_file)
+        scan_id = db.save_scan(topology, findings, "MOCK_AWS_STATE (src/aws/mock_data.py)")
         show_persistence_summary(scan_id, len(findings))
         db.close()
 
     summary = sandbox.summary()
     console.print(
         Panel(
-            f"Total: {summary['total']} | "
-            f"Succeeded: {summary['succeeded']} | "
-            f"Failed: {summary['failed']}",
+            f"Total: {summary['total']} | Succeeded: {summary['succeeded']} | Failed: {summary['failed']}",
             title="Remediation Summary",
             border_style="yellow",
         )
@@ -210,39 +131,16 @@ def remediate(state_file, execute, save):
 
 
 @cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-@click.option(
-    "--output",
-    type=click.Path(),
-    default=None,
-    help="Custom output path for the PDF report.",
-)
-def report(state_file, output):
+@click.option("--output", type=click.Path(), default=None, help="Custom output path for the PDF report.")
+def report(output):
     """Generate a PDF incident report for the current scan."""
-
     show_banner()
-
-    with console.status("[bold cyan]Loading state...[/bold cyan]"):
-        loader = CloudStateLoader(state_file)
-        state = loader.load()
-
-    topology = CloudTopology()
-    topology.build_from_state(state)
-
     with console.status("[bold cyan]Detecting drift...[/bold cyan]"):
-        detector = DriftDetector(topology)
-        findings = detector.detect_public_database_exposure()
+        topology, findings = load_and_analyze()
 
     show_drift_findings(findings)
 
-    with console.status(
-        "[bold yellow]Generating remediation scripts...[/bold yellow]"
-    ):
+    with console.status("[bold yellow]Generating remediation scripts...[/bold yellow]"):
         generator = RemediationGenerator()
         scripts = generator.generate_all(findings)
 
@@ -253,91 +151,12 @@ def report(state_file, output):
     if output:
         report_gen.output_dir = Path(output).parent
 
-    filepath = report_gen.generate(
-        findings=findings,
-        topology=topology,
-        remediation_results=results,
-    )
+    filepath = report_gen.generate(findings=findings, topology=topology, remediation_results=results)
 
     console.print(
         Panel(
-            f"[bold green]PDF report saved to:[/bold green]\n"
-            f"[cyan]{filepath}[/cyan]",
+            f"[bold green]PDF report saved to:[/bold green]\n[cyan]{filepath}[/cyan]",
             title="AeroDrift Report",
-            border_style="green",
-        )
-    )
-
-
-@cli.command()
-@click.option(
-    "--state-file",
-    type=click.Path(exists=True),
-    default=str(DEFAULT_STATE),
-    help="Path to the cloud state JSON file.",
-)
-def full_scan(state_file):
-    """Run the complete pipeline: ingest, detect, remediate,
-    persist, and generate PDF report."""
-
-    show_banner()
-
-    with console.status("[bold cyan]Step 1/5: Loading state...[/bold cyan]"):
-        loader = CloudStateLoader(state_file)
-        state = loader.load()
-        topology = CloudTopology()
-        topology.build_from_state(state)
-
-    show_cloud_summary(topology)
-    show_topology_tree(topology)
-
-    with console.status(
-        "[bold cyan]Step 2/5: Detecting drift...[/bold cyan]"
-    ):
-        detector = DriftDetector(topology)
-        findings = detector.detect_public_database_exposure()
-
-    show_drift_findings(findings)
-
-    with console.status(
-        "[bold yellow]Step 3/5: Generating remediation...[/bold yellow]"
-    ):
-        generator = RemediationGenerator()
-        scripts = generator.generate_all(findings)
-        show_remediation_scripts(scripts)
-
-    with console.status(
-        "[bold yellow]Step 4/5: Executing sandbox...[/bold yellow]"
-    ):
-        sandbox = RemediationSandbox(dry_run=True)
-        results = sandbox.execute_all(scripts)
-        show_remediation_results(results)
-
-    with console.status(
-        "[bold green]Step 5/5: Saving & reporting...[/bold green]"
-    ):
-        db = AeroDriftDB()
-        db.connect()
-        scan_id = db.save_scan(topology, findings, state_file)
-        show_persistence_summary(scan_id, len(findings))
-        db.close()
-
-        report_gen = ReportGenerator()
-        report_path = report_gen.generate(
-            findings=findings,
-            topology=topology,
-            remediation_results=results,
-            scan_id=scan_id,
-        )
-
-    console.print(
-        Panel(
-            f"[bold green]Full scan complete![/bold green]\n\n"
-            f"Scan ID:        {scan_id}\n"
-            f"Findings:       {len(findings)}\n"
-            f"Scripts:        {len(scripts)}\n"
-            f"PDF Report:     {report_path}",
-            title="AeroDrift Pipeline Summary",
             border_style="green",
         )
     )
@@ -346,7 +165,6 @@ def full_scan(state_file):
 @cli.command()
 def history():
     """Show previous scan history from the database."""
-
     db = AeroDriftDB()
     db.connect()
     scans = db.list_scans()
@@ -357,7 +175,6 @@ def history():
         return
 
     from rich.table import Table
-
     table = Table(title="Scan History")
     table.add_column("Scan ID", style="bold")
     table.add_column("Timestamp")
@@ -368,12 +185,8 @@ def history():
 
     for scan in scans:
         table.add_row(
-            str(scan["id"]),
-            scan["timestamp"],
-            scan["state_file"] or "-",
-            str(scan["node_count"]),
-            str(scan["edge_count"]),
-            str(scan["finding_count"]),
+            str(scan["id"]), scan["timestamp"], scan["state_file"] or "-",
+            str(scan["node_count"]), str(scan["edge_count"]), str(scan["finding_count"]),
         )
 
     console.print(table)
